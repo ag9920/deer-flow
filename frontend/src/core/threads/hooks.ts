@@ -16,7 +16,7 @@ import { useUpdateSubtask } from "../tasks/context";
 import type { UploadedFileInfo } from "../uploads";
 import { promptInputFilePartToFile, uploadFiles } from "../uploads";
 
-import type { AgentThread, AgentThreadState } from "./types";
+import type { AgentThread, AgentThreadContext, AgentThreadState } from "./types";
 
 export type ToolEndEvent = {
   name: string;
@@ -212,13 +212,6 @@ export function useThreadStream({
     onCreated(meta) {
       handleStreamStart(meta.thread_id);
       setOnStreamThreadId(meta.thread_id);
-      if (context.agent_name && !isMock) {
-        void getAPIClient()
-          .threads.update(meta.thread_id, {
-            metadata: { agent_name: context.agent_name },
-          })
-          .catch(() => ({}));
-      }
     },
     onLangChainEvent(event) {
       if (event.event === "on_tool_end") {
@@ -551,7 +544,10 @@ export function useThreads(
       if (maxResults !== undefined && maxResults <= 0) {
         const response =
           await apiClient.threads.search<AgentThreadState>(params);
-        return response as AgentThread[];
+        return (response as AgentThread[]).map((t) => ({
+          ...t,
+          context: t.metadata as unknown as AgentThreadContext,
+        }));
       }
 
       const pageSize =
@@ -582,7 +578,12 @@ export function useThreads(
           offset,
         })) as AgentThread[];
 
-        threads.push(...response);
+        threads.push(
+          ...response.map((t) => ({
+            ...t,
+            context: t.metadata as unknown as AgentThreadContext,
+          }))
+        );
 
         if (response.length < currentLimit) {
           break;
