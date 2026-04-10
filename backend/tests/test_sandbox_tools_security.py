@@ -1018,3 +1018,33 @@ def test_str_replace_and_append_on_same_path_should_preserve_both_updates(monkey
 
     assert failures == []
     assert sandbox.content == "ALPHA\ntail\n"
+
+def test_file_operation_lock_memory_cleanup() -> None:
+    """Verify that released locks are eventually cleaned up by WeakValueDictionary.
+
+    This ensures that the sandbox component doesn't leak memory over time when
+    operating on many unique file paths.
+    """
+    import gc
+    from deerflow.sandbox.file_operation_lock import _FILE_OPERATION_LOCKS, get_file_operation_lock
+
+    class MockSandbox:
+        id = "test_cleanup_sandbox"
+
+    initial_count = len(_FILE_OPERATION_LOCKS)
+
+    def _use_lock_and_release() -> None:
+        # Create and acquire the lock within this scope
+        lock = get_file_operation_lock(MockSandbox(), "/tmp/deer-flow/memory_leak_test_file.txt")
+        with lock:
+            pass
+        # As soon as this function returns, the local 'lock' variable is destroyed.
+        # Its reference count goes to zero, triggering WeakValueDictionary cleanup.
+
+    _use_lock_and_release()
+
+    # Force a garbage collection to be absolutely sure
+    gc.collect()
+
+    # The dictionary should be back to its initial size (i.e. our test lock was evicted)
+    assert len(_FILE_OPERATION_LOCKS) == initial_count
